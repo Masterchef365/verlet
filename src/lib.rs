@@ -13,8 +13,8 @@ mod query_accel;
 mod sim;
 
 const BALL_RADIUS: f32 = 0.1;
-const DT: f32 = 0.1;
-const N_BALLS: usize = 10;
+//const DT: f32 = 0.1;
+const N_BALLS: usize = 100;
 
 // All state associated with client-side behaviour
 struct ClientState;
@@ -57,7 +57,6 @@ impl UserState for ServerState {
             let k = 100000;
             let mut rand = || (io.random() % k) as f32 / k as f32;
             let pos = Vec3::new(rand(), 0., rand()) * 2. - Vec3::new(1., 0., 1.);
-            dbg!(pos);
 
             let tf = Transform::new().with_position(pos);
 
@@ -66,16 +65,25 @@ impl UserState for ServerState {
                 .add_component(LastTransform(tf))
                 .add_component(Render::new(CIRCLE_RDR))
                 .add_component(Synchronized)
+                .add_component(Ball { accel: Vec2::ZERO })
                 .build();
         }
 
         sched
+            .add_system(Self::gravity)
+            .stage(Stage::Update)
+            .query::<Ball>(Access::Write)
+            .build();
+
+        sched
             .add_system(Self::sim_step)
-            .stage(Stage::PostUpdate)
+            .stage(Stage::Update)
             .query::<Transform>(Access::Read)
             .query::<LastTransform>(Access::Write)
+            .query::<Ball>(Access::Write)
             .subscribe::<FrameTime>()
             .build();
+
         Self
     }
 }
@@ -85,16 +93,23 @@ impl ServerState {
         let FrameTime { delta: dt, .. } = io.inbox_first().unwrap();
 
         let entities: Vec<EntityId> = query.iter().collect();
+
         let mut positions: Vec<Vec2> = entities
             .iter()
             .map(|&entity| query.read::<Transform>(entity).pos.xz())
             .collect();
+
         let last_positions: Vec<Vec2> = entities
             .iter()
             .map(|&entity| query.read::<LastTransform>(entity).0.pos.xz())
             .collect();
 
-        sim(&mut positions, &last_positions, dt);
+        let accels: Vec<Vec2> = entities
+            .iter()
+            .map(|&entity| query.read::<Ball>(entity).accel)
+            .collect();
+
+        sim(&mut positions, &last_positions, &accels, dt);
 
         // Write positions back
         for (&entity, position) in entities.iter().zip(&positions) {
@@ -104,6 +119,16 @@ impl ServerState {
             tf.pos.x = position.x;
             tf.pos.z = position.y;
             query.write(entity, &tf);
+
+            // Reset acceleration
+            query.write(entity, &Ball { accel: Vec2::ZERO });
+        }
+    }
+
+    fn gravity(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        const GRAVITY: Vec2 = Vec2::new(0., -0.1);
+        for entity in query.iter() {
+            query.modify::<Ball>(entity, |ball| ball.accel += GRAVITY);
         }
     }
 }
@@ -122,8 +147,10 @@ fn circle_mesh(n: usize, scale: f32) -> Mesh {
     Mesh { vertices, indices }
 }
 
-fn sim(positions: &mut [Vec2], last_positions: &[Vec2], dt: f32) {
-    for pos in positions {
-        pos.y -= dt;
+fn sim(positions: &mut [Vec2], last_positions: &[Vec2], accels: &[Vec2], dt: f32) {
+    // Integrate
+    for ((pos, last), accel) in positions.iter_mut().zip(last_positions).zip(accels) {
+        let vel = *pos - *last;
+        *pos += vel + *accel * dt.powi(2);
     }
 }
