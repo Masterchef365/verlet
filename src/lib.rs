@@ -14,8 +14,9 @@ mod query_accel;
 mod sim;
 
 const BALL_RADIUS: f32 = 0.1;
-//const DT: f32 = 0.1;
-const N_BALLS: usize = 4;
+const N_BALLS: usize = 10;
+const GRAVITY: Vec2 = Vec2::new(0., -9.8);
+const SUBSTEPS: usize = 8;
 
 // All state associated with client-side behaviour
 struct ClientState;
@@ -33,7 +34,7 @@ struct Ball {
 impl UserState for ClientState {
     fn new(io: &mut EngineIo, _sched: &mut EngineSchedule<Self>) -> Self {
         io.send(&UploadMesh {
-            mesh: circle_mesh(64, BALL_RADIUS),
+            mesh: circle_mesh(20, BALL_RADIUS),
             id: CIRCLE_RDR,
         });
         Self
@@ -51,7 +52,7 @@ impl UserState for ServerState {
 
             let tf = Transform::new().with_position(pos);
 
-            let mut extra = [0.; 4*4];
+            let mut extra = [0.; 4 * 4];
             for i in 0..3 {
                 extra[i] = rand();
             }
@@ -67,27 +68,29 @@ impl UserState for ServerState {
                 .build();
         }
 
-        sched
-            .add_system(Self::circle_constraint)
-            .stage(Stage::Update)
-            .query::<Ball>(Access::Read)
-            .query::<Transform>(Access::Write)
-            .build();
+        for _ in 0..SUBSTEPS {
+            sched
+                .add_system(Self::gravity)
+                .stage(Stage::Update)
+                .query::<Ball>(Access::Write)
+                .build();
 
-        sched
-            .add_system(Self::gravity)
-            .stage(Stage::Update)
-            .query::<Ball>(Access::Write)
-            .build();
+            sched
+                .add_system(Self::circle_constraint)
+                .stage(Stage::Update)
+                .query::<Ball>(Access::Read)
+                .query::<Transform>(Access::Write)
+                .build();
 
-        sched
-            .add_system(Self::sim_step)
-            .stage(Stage::Update)
-            .query::<Transform>(Access::Read)
-            .query::<LastTransform>(Access::Write)
-            .query::<Ball>(Access::Write)
-            .subscribe::<FrameTime>()
-            .build();
+            sched
+                .add_system(Self::sim_step)
+                .stage(Stage::Update)
+                .query::<Transform>(Access::Read)
+                .query::<LastTransform>(Access::Write)
+                .query::<Ball>(Access::Write)
+                .subscribe::<FrameTime>()
+                .build();
+        }
 
         Self
     }
@@ -96,6 +99,7 @@ impl UserState for ServerState {
 impl ServerState {
     fn sim_step(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
         let FrameTime { delta: dt, .. } = io.inbox_first().unwrap();
+        let dt = dt / SUBSTEPS as f32;
 
         let entities: Vec<EntityId> = query.iter().collect();
 
@@ -131,7 +135,6 @@ impl ServerState {
     }
 
     fn gravity(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
-        const GRAVITY: Vec2 = Vec2::new(0., -9.8);
         for entity in query.iter() {
             query.modify::<Ball>(entity, |ball| ball.accel += GRAVITY);
         }
@@ -169,7 +172,7 @@ fn circle_mesh(n: usize, scale: f32) -> Mesh {
 fn sim(positions: &mut [Vec2], last_positions: &[Vec2], accels: &[Vec2], dt: f32) {
     // Collisions
     for i in 0..positions.len() {
-        for j in (i+1)..positions.len() {
+        for j in (i + 1)..positions.len() {
             let diff = positions[i] - positions[j];
             let n = diff.normalize();
             let len = diff.length();
