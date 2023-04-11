@@ -1,6 +1,7 @@
 use std::f32::consts::TAU;
 
 use cimvr_common::glam::swizzles::*;
+use cimvr_common::render::RenderExtra;
 use cimvr_common::{
     glam::{Vec2, Vec3},
     render::{Mesh, MeshHandle, Render, UploadMesh, Vertex},
@@ -14,7 +15,7 @@ mod sim;
 
 const BALL_RADIUS: f32 = 0.1;
 //const DT: f32 = 0.1;
-const N_BALLS: usize = 10;
+const N_BALLS: usize = 4;
 
 // All state associated with client-side behaviour
 struct ClientState;
@@ -50,12 +51,19 @@ impl UserState for ServerState {
 
             let tf = Transform::new().with_position(pos);
 
+            let mut extra = [0.; 4*4];
+            for i in 0..3 {
+                extra[i] = rand();
+            }
+            extra[3] = 1.;
+
             io.create_entity()
                 .add_component(tf)
                 .add_component(LastTransform(tf))
                 .add_component(Render::new(CIRCLE_RDR))
                 .add_component(Synchronized)
                 .add_component(Ball { accel: Vec2::ZERO })
+                .add_component(RenderExtra(extra))
                 .build();
         }
 
@@ -159,6 +167,19 @@ fn circle_mesh(n: usize, scale: f32) -> Mesh {
 }
 
 fn sim(positions: &mut [Vec2], last_positions: &[Vec2], accels: &[Vec2], dt: f32) {
+    // Collisions
+    for i in 0..positions.len() {
+        for j in (i+1)..positions.len() {
+            let diff = positions[i] - positions[j];
+            let n = diff.normalize();
+            let len = diff.length();
+            let new_len = len.max(BALL_RADIUS * 2.);
+            let displacement = (new_len - len) / 2.;
+            positions[i] += displacement * n;
+            positions[j] -= displacement * n;
+        }
+    }
+
     // Integrate
     for ((pos, last), accel) in positions.iter_mut().zip(last_positions).zip(accels) {
         let vel = *pos - *last;
