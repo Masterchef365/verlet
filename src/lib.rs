@@ -41,32 +41,19 @@ impl UserState for ClientState {
     }
 }
 
-struct ServerState;
+struct ServerState {
+    start_time: Option<f32>,
+}
+
 impl UserState for ServerState {
     // Implement a constructor
     fn new(io: &mut EngineIo, sched: &mut EngineSchedule<Self>) -> Self {
-        for _ in 0..N_BALLS {
-            let k = 100000;
-            let mut rand = || (io.random() % k) as f32 / k as f32;
-            let pos = Vec3::new(rand(), 0., rand()) * 2. - Vec3::new(1., 0., 1.);
-
-            let tf = Transform::new().with_position(pos);
-
-            let mut extra = [0.; 4 * 4];
-            for i in 0..3 {
-                extra[i] = rand();
-            }
-            extra[3] = 1.;
-
-            io.create_entity()
-                .add_component(tf)
-                .add_component(LastTransform(tf))
-                .add_component(Render::new(CIRCLE_RDR))
-                .add_component(Synchronized)
-                .add_component(Ball { accel: Vec2::ZERO })
-                .add_component(RenderExtra(extra))
-                .build();
-        }
+        sched
+            .add_system(Self::ball_adder)
+            .stage(Stage::Update)
+            .subscribe::<FrameTime>()
+            .query::<Ball>(Access::Read)
+            .build();
 
         for _ in 0..SUBSTEPS {
             sched
@@ -92,11 +79,47 @@ impl UserState for ServerState {
                 .build();
         }
 
-        Self
+        Self { start_time: None }
     }
 }
 
 impl ServerState {
+    fn ball_adder(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        let FrameTime { delta, time } = io.inbox_first().unwrap();
+        if self.start_time.is_none() {
+            self.start_time = Some(time);
+        }
+
+        let time = time - self.start_time.unwrap();
+
+        if time < query.iter().count() as f32 {
+            return;
+        }
+
+        let k = 100000;
+        let mut rand = || (io.random() % k) as f32 / k as f32;
+        //let pos = Vec3::new(rand(), 0., rand()) * 2. - Vec3::new(1., 0., 1.);
+        let pos = Vec3::new(1., 0., -1.);
+
+        let tf = Transform::new().with_position(pos);
+
+        let mut extra = [0.; 4 * 4];
+        for i in 0..3 {
+            extra[i] = rand();
+        }
+        extra[3] = 1.;
+
+        io.create_entity()
+            .add_component(tf)
+            .add_component(LastTransform(tf))
+            .add_component(Render::new(CIRCLE_RDR))
+            .add_component(Synchronized)
+            .add_component(Ball { accel: Vec2::ZERO })
+            .add_component(RenderExtra(extra))
+            .build();
+
+    }
+
     fn sim_step(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
         let FrameTime { delta: dt, .. } = io.inbox_first().unwrap();
         let dt = dt / SUBSTEPS as f32;
