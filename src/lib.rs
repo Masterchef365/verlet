@@ -14,7 +14,7 @@ mod sim;
 
 const BALL_RADIUS: f32 = 0.1;
 //const DT: f32 = 0.1;
-const N_BALLS: usize = 100;
+const N_BALLS: usize = 10;
 
 // All state associated with client-side behaviour
 struct ClientState;
@@ -30,26 +30,16 @@ struct Ball {
 }
 
 impl UserState for ClientState {
-    // Implement a constructor
     fn new(io: &mut EngineIo, _sched: &mut EngineSchedule<Self>) -> Self {
         io.send(&UploadMesh {
             mesh: circle_mesh(64, BALL_RADIUS),
             id: CIRCLE_RDR,
         });
-
-        println!("Hello, client!");
-
-        // NOTE: We are using the println defined by cimvr_engine_interface here, NOT the standard library!
-        cimvr_engine_interface::println!("This prints");
-        std::println!("But this doesn't");
-
         Self
     }
 }
 
-// All state associated with server-side behaviour
 struct ServerState;
-
 impl UserState for ServerState {
     // Implement a constructor
     fn new(io: &mut EngineIo, sched: &mut EngineSchedule<Self>) -> Self {
@@ -68,6 +58,13 @@ impl UserState for ServerState {
                 .add_component(Ball { accel: Vec2::ZERO })
                 .build();
         }
+
+        sched
+            .add_system(Self::circle_constraint)
+            .stage(Stage::Update)
+            .query::<Ball>(Access::Read)
+            .query::<Transform>(Access::Write)
+            .build();
 
         sched
             .add_system(Self::gravity)
@@ -126,9 +123,23 @@ impl ServerState {
     }
 
     fn gravity(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
-        const GRAVITY: Vec2 = Vec2::new(0., -0.1);
+        const GRAVITY: Vec2 = Vec2::new(0., -9.8);
         for entity in query.iter() {
             query.modify::<Ball>(entity, |ball| ball.accel += GRAVITY);
+        }
+    }
+
+    fn circle_constraint(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
+        const RADIUS: f32 = 3.;
+        for entity in query.iter() {
+            query.modify::<Transform>(entity, |tf| {
+                let pos = tf.pos.xz();
+                let n = pos.normalize();
+                let pos = n * pos.length().min(RADIUS - BALL_RADIUS);
+
+                tf.pos.x = pos.x;
+                tf.pos.z = pos.y;
+            });
         }
     }
 }
