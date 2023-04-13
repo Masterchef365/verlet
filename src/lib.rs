@@ -15,7 +15,7 @@ mod sim;
 
 const BALL_RADIUS: f32 = 0.3;
 //const N_BALLS: usize = 10;
-const GRAVITY: Vec2 = Vec2::new(0., -0.1);
+const GRAVITY: Vec2 = Vec2::new(0., -9.8);
 const SUBSTEPS: usize = 1;
 const CONTAINER_RADIUS: f32 = 3.;
 
@@ -168,7 +168,7 @@ impl ServerState {
             // (1/2)mv^2
             vel.dot(vel) / 2.
         }).sum();
-        dbg!(kinetic_energy);
+        //dbg!(kinetic_energy);
 
         // Write positions back
         for (&entity, position) in entities.iter().zip(&positions) {
@@ -237,8 +237,14 @@ fn sim(positions: &mut [Vec2], last_positions: &[Vec2], accels: &[Vec2], dt: f32
             let diff = positions[i] - positions[j];
             let n = diff.normalize();
             let len = diff.length();
+
+            if len < BALL_RADIUS * 2. {
+                dbg!(len);
+            }
+
             let new_len = len.max(BALL_RADIUS * 2.);
             let displacement = (new_len - len) / 2.;
+
             positions[i] += displacement * n;
             positions[j] -= displacement * n;
         }
