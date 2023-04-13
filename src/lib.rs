@@ -162,6 +162,14 @@ impl ServerState {
 
         sim(&mut positions, &last_positions, &accels, dt);
 
+        // Calculate kinetic energy
+        let kinetic_energy: f32 = last_positions.iter().zip(&positions).map(|(cur, last)| {
+            let vel = *cur - *last;
+            // (1/2)mv^2
+            vel.dot(vel) / 2.
+        }).sum();
+        dbg!(kinetic_energy);
+
         // Write positions back
         for (&entity, position) in entities.iter().zip(&positions) {
             let mut tf: Transform = query.read(entity);
