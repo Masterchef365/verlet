@@ -15,8 +15,8 @@ mod sim;
 
 const BALL_RADIUS: f32 = 0.2;
 //const N_BALLS: usize = 10;
-const GRAVITY: Vec2 = Vec2::new(0., -100.8);
-const SUBSTEPS: usize = 18;
+const GRAVITY: Vec2 = Vec2::new(0., -9.8);
+const SUBSTEPS: usize = 1;
 const CONTAINER_RADIUS: f32 = 3.;
 
 // All state associated with client-side behaviour
@@ -109,7 +109,7 @@ impl ServerState {
 
         let time = time - self.start_time.unwrap();
 
-        if time * 8. < query.iter().count() as f32 {
+        if time < query.iter().count() as f32 {
             return;
         }
 
@@ -141,7 +141,6 @@ impl ServerState {
 
     fn sim_step(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
         let FrameTime { delta: dt, .. } = io.inbox_first().unwrap();
-        let dt = dt * 3.;
         let dt = dt / SUBSTEPS as f32;
 
         let entities: Vec<EntityId> = query.iter().collect();
@@ -237,15 +236,10 @@ fn filled_circle_mesh(n: usize, scale: f32) -> Mesh {
 }
 
 fn sim(positions: &mut [Vec2], last_positions: &mut [Vec2], accels: &[Vec2], dt: f32) {
-    // Integrate
-    for ((pos, last), accel) in positions.iter_mut().zip(&*last_positions).zip(accels) {
-        let vel = *pos - *last;
-        *pos += vel + *accel * dt.powi(2);
-    }
+    let mut special = vec![false; positions.len()];
 
     // Collisions
     for i in 0..positions.len() {
-        last_positions[i] = positions[i];
         for j in (i + 1)..positions.len() {
             let diff = positions[i] - positions[j];
             let n = diff.normalize();
@@ -256,14 +250,26 @@ fn sim(positions: &mut [Vec2], last_positions: &mut [Vec2], accels: &[Vec2], dt:
             let thresh = BALL_RADIUS * 2.;
             if dist < thresh {
                 let displacement = (thresh - dist) / 2.;
+                //displacement *= 0.95;
+
 
                 positions[i] += displacement * n;
                 positions[j] -= displacement * n;
-                last_positions[i] = positions[i];
-                last_positions[j] = positions[j];
+                //last_positions[i] = positions[i];
+                //last_positions[j] = positions[j];
+                //special[i] = true;
+                //special[j] = true;
             }
         }
     }
 
+    // Integrate
+    for (((pos, last), accel), special) in positions.iter_mut().zip(last_positions).zip(accels).zip(special) {
+        let vel = *pos - *last;
+        if !special {
+            *last = *pos;
+        }
+        *pos += vel + *accel * dt.powi(2);
+    }
 }
 
