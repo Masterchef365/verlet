@@ -13,10 +13,10 @@ use serde::{Deserialize, Serialize};
 mod query_accel;
 mod sim;
 
-const BALL_RADIUS: f32 = 0.3;
+const BALL_RADIUS: f32 = 0.2;
 //const N_BALLS: usize = 10;
-const GRAVITY: Vec2 = Vec2::new(0., -9.8);
-const SUBSTEPS: usize = 1;
+const GRAVITY: Vec2 = Vec2::new(0., -100.8);
+const SUBSTEPS: usize = 18;
 const CONTAINER_RADIUS: f32 = 3.;
 
 // All state associated with client-side behaviour
@@ -109,7 +109,7 @@ impl ServerState {
 
         let time = time - self.start_time.unwrap();
 
-        if time / 8. < query.iter().count() as f32 {
+        if time * 8. < query.iter().count() as f32 {
             return;
         }
 
@@ -118,7 +118,7 @@ impl ServerState {
         let k = 100000;
         let mut rand = || (io.random() % k) as f32 / k as f32;
         //let pos = Vec3::new(rand(), 0., rand()) * 2. - Vec3::new(1., 0., 1.);
-        let pos = Vec3::new(1., 0., -1.);
+        let pos = Vec3::new(0.3, 0., 2.);
 
         let tf = Transform::new().with_position(pos);
 
@@ -141,6 +141,7 @@ impl ServerState {
 
     fn sim_step(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
         let FrameTime { delta: dt, .. } = io.inbox_first().unwrap();
+        let dt = dt * 3.;
         let dt = dt / SUBSTEPS as f32;
 
         let entities: Vec<EntityId> = query.iter().collect();
@@ -150,7 +151,7 @@ impl ServerState {
             .map(|&entity| query.read::<Transform>(entity).pos.xz())
             .collect();
 
-        let last_positions: Vec<Vec2> = entities
+        let mut last_positions: Vec<Vec2> = entities
             .iter()
             .map(|&entity| query.read::<LastTransform>(entity).0.pos.xz())
             .collect();
@@ -160,19 +161,24 @@ impl ServerState {
             .map(|&entity| query.read::<Ball>(entity).accel)
             .collect();
 
-        sim(&mut positions, &last_positions, &accels, dt);
-
+        /*
         // Calculate kinetic energy
         let kinetic_energy: f32 = last_positions.iter().zip(&positions).map(|(cur, last)| {
             let vel = *cur - *last;
             // (1/2)mv^2
             vel.dot(vel) / 2.
         }).sum();
-        //dbg!(kinetic_energy);
+        dbg!(kinetic_energy);
+        */
+
+        sim(&mut positions, &mut last_positions, &accels, dt);
 
         // Write positions back
-        for (&entity, position) in entities.iter().zip(&positions) {
+        for ((&entity, position), last) in entities.iter().zip(&positions).zip(&last_positions) {
             let mut tf: Transform = query.read(entity);
+
+            tf.pos.x = last.x;
+            tf.pos.z = last.y;
             query.write(entity, &LastTransform(tf));
 
             tf.pos.x = position.x;
@@ -230,30 +236,34 @@ fn filled_circle_mesh(n: usize, scale: f32) -> Mesh {
     Mesh { vertices, indices }
 }
 
-fn sim(positions: &mut [Vec2], last_positions: &[Vec2], accels: &[Vec2], dt: f32) {
-    // Collisions
-    for i in 0..positions.len() {
-        for j in (i + 1)..positions.len() {
-            let diff = positions[i] - positions[j];
-            let n = diff.normalize();
-            let len = diff.length();
-
-            if len < BALL_RADIUS * 2. {
-                dbg!(len);
-            }
-
-            let new_len = len.max(BALL_RADIUS * 2.);
-            let displacement = (new_len - len) / 2.;
-
-            positions[i] += displacement * n;
-            positions[j] -= displacement * n;
-        }
-    }
-
+fn sim(positions: &mut [Vec2], last_positions: &mut [Vec2], accels: &[Vec2], dt: f32) {
     // Integrate
-    for ((pos, last), accel) in positions.iter_mut().zip(last_positions).zip(accels) {
+    for ((pos, last), accel) in positions.iter_mut().zip(&*last_positions).zip(accels) {
         let vel = *pos - *last;
         *pos += vel + *accel * dt.powi(2);
     }
+
+    // Collisions
+    for i in 0..positions.len() {
+        last_positions[i] = positions[i];
+        for j in (i + 1)..positions.len() {
+            let diff = positions[i] - positions[j];
+            let n = diff.normalize();
+            let dist = diff.length();
+
+            //if len < BALL_RADIUS * 2. { dbg!(len); }
+
+            let thresh = BALL_RADIUS * 2.;
+            if dist < thresh {
+                let displacement = (thresh - dist) / 2.;
+
+                positions[i] += displacement * n;
+                positions[j] -= displacement * n;
+                last_positions[i] = positions[i];
+                last_positions[j] = positions[j];
+            }
+        }
+    }
+
 }
 
