@@ -1,7 +1,7 @@
 use std::f32::consts::TAU;
 
 use cimvr_common::glam::swizzles::*;
-use cimvr_common::render::RenderExtra;
+use cimvr_common::render::{RenderExtra, Primitive};
 use cimvr_common::{
     glam::{Vec2, Vec3},
     render::{Mesh, MeshHandle, Render, UploadMesh, Vertex},
@@ -13,15 +13,17 @@ use serde::{Deserialize, Serialize};
 mod query_accel;
 mod sim;
 
-const BALL_RADIUS: f32 = 0.1;
-const N_BALLS: usize = 10;
-const GRAVITY: Vec2 = Vec2::new(0., -9.8);
-const SUBSTEPS: usize = 8;
+const BALL_RADIUS: f32 = 0.3;
+//const N_BALLS: usize = 10;
+const GRAVITY: Vec2 = Vec2::new(0., -0.1);
+const SUBSTEPS: usize = 1;
+const CONTAINER_RADIUS: f32 = 3.;
 
 // All state associated with client-side behaviour
 struct ClientState;
 
 pub const CIRCLE_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Circle"));
+pub const BACKGROUND_CIRCLE_RDR: MeshHandle = MeshHandle::new(pkg_namespace!("Background circle"));
 
 #[derive(Component, Serialize, Deserialize, Copy, Clone, Default)]
 struct LastTransform(Transform);
@@ -33,10 +35,25 @@ struct Ball {
 
 impl UserState for ClientState {
     fn new(io: &mut EngineIo, _sched: &mut EngineSchedule<Self>) -> Self {
+        // TODO: Put this pattern (and related) into some sort of manager...
+        // Any sort of higher level interface smh my head
         io.send(&UploadMesh {
-            mesh: circle_mesh(20, BALL_RADIUS),
+            //mesh: filled_circle_mesh(20, BALL_RADIUS),
+            mesh: filled_circle_mesh(120, BALL_RADIUS),
             id: CIRCLE_RDR,
         });
+
+        io.send(&UploadMesh {
+            //mesh: (20, BALL_RADIUS),
+            mesh: line_circle_mesh(200, CONTAINER_RADIUS),
+            id: BACKGROUND_CIRCLE_RDR,
+        });
+
+        io.create_entity()
+            .add_component(Transform::new())
+            .add_component(Render::new(BACKGROUND_CIRCLE_RDR).primitive(Primitive::Lines))
+            .build();
+
         Self
     }
 }
@@ -92,9 +109,11 @@ impl ServerState {
 
         let time = time - self.start_time.unwrap();
 
-        if time < query.iter().count() as f32 {
+        if time / 8. < query.iter().count() as f32 {
             return;
         }
+
+        //if 
 
         let k = 100000;
         let mut rand = || (io.random() % k) as f32 / k as f32;
@@ -112,7 +131,7 @@ impl ServerState {
         io.create_entity()
             .add_component(tf)
             .add_component(LastTransform(tf))
-            .add_component(Render::new(CIRCLE_RDR))
+            .add_component(Render::new(CIRCLE_RDR).primitive(Primitive::Triangles))
             .add_component(Synchronized)
             .add_component(Ball { accel: Vec2::ZERO })
             .add_component(RenderExtra(extra))
@@ -164,12 +183,11 @@ impl ServerState {
     }
 
     fn circle_constraint(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
-        const RADIUS: f32 = 3.;
         for entity in query.iter() {
             query.modify::<Transform>(entity, |tf| {
                 let pos = tf.pos.xz();
                 let n = pos.normalize();
-                let pos = n * pos.length().min(RADIUS - BALL_RADIUS);
+                let pos = n * pos.length().min(CONTAINER_RADIUS - BALL_RADIUS);
 
                 tf.pos.x = pos.x;
                 tf.pos.z = pos.y;
@@ -180,7 +198,19 @@ impl ServerState {
 
 make_app_state!(ClientState, ServerState);
 
-fn circle_mesh(n: usize, scale: f32) -> Mesh {
+fn line_circle_mesh(n: usize, scale: f32) -> Mesh {
+    let vertices = (0..n)
+        .map(|i| TAU * i as f32 / n as f32)
+        .map(|t| [t.cos() * scale, 0., t.sin() * scale])
+        .map(|pos| Vertex { pos, uvw: [1.; 3] })
+        .collect();
+
+    let indices = (0..n as u32).map(|i| [i, (i+1) % n as u32]).flatten().collect();
+
+    Mesh { vertices, indices }
+}
+
+fn filled_circle_mesh(n: usize, scale: f32) -> Mesh {
     let vertices = (0..n)
         .map(|i| TAU * i as f32 / n as f32)
         .map(|t| [t.cos() * scale, 0., t.sin() * scale])
@@ -212,3 +242,4 @@ fn sim(positions: &mut [Vec2], last_positions: &[Vec2], accels: &[Vec2], dt: f32
         *pos += vel + *accel * dt.powi(2);
     }
 }
+
