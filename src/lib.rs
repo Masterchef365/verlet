@@ -69,29 +69,37 @@ impl UserState for ServerState {
             .add_system(Self::ball_adder)
             .stage(Stage::Update)
             .subscribe::<FrameTime>()
-            .query::<Ball>(Access::Read)
+                .query("Balls")
+                .intersect::<Ball>(Access::Read)
+                .finish()
             .build();
 
         for _ in 0..SUBSTEPS {
             sched
                 .add_system(Self::gravity)
                 .stage(Stage::Update)
-                .query::<Ball>(Access::Write)
+                    .query("Balls")
+                    .intersect::<Ball>(Access::Write)
+                    .finish()
                 .build();
 
             sched
                 .add_system(Self::circle_constraint)
                 .stage(Stage::Update)
-                .query::<Ball>(Access::Read)
-                .query::<Transform>(Access::Write)
+                    .query("Balls")
+                    .intersect::<Ball>(Access::Read)
+                    .intersect::<Transform>(Access::Write)
+                    .finish()
                 .build();
 
             sched
                 .add_system(Self::sim_step)
                 .stage(Stage::Update)
-                .query::<Transform>(Access::Read)
-                .query::<LastTransform>(Access::Write)
-                .query::<Ball>(Access::Write)
+                    .query("Balls")
+                    .intersect::<Transform>(Access::Read)
+                    .intersect::<LastTransform>(Access::Write)
+                    .intersect::<Ball>(Access::Write)
+                    .finish()
                 .subscribe::<FrameTime>()
                 .build();
         }
@@ -109,7 +117,7 @@ impl ServerState {
 
         let time = time - self.start_time.unwrap();
 
-        if time < query.iter().count() as f32 {
+        if time < query.iter("Balls").count() as f32 {
             return;
         }
 
@@ -143,9 +151,9 @@ impl ServerState {
         let FrameTime { delta: dt, .. } = io.inbox_first().unwrap();
         let dt = dt / SUBSTEPS as f32;
 
-        let entities: Vec<EntityId> = query.iter().collect();
-
-        let mut positions: Vec<Vec2> = entities
+        let entities: Vec<EntityId> = query.iter("Balls").collect();
+                                                
+        let mut positions: Vec<Vec2> = entities  
             .iter()
             .map(|&entity| query.read::<Transform>(entity).pos.xz())
             .collect();
@@ -190,13 +198,13 @@ impl ServerState {
     }
 
     fn gravity(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
-        for entity in query.iter() {
+        for entity in query.iter("Balls") {
             query.modify::<Ball>(entity, |ball| ball.accel += GRAVITY);
         }
     }
 
     fn circle_constraint(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
-        for entity in query.iter() {
+        for entity in query.iter("Balls") {
             query.modify::<Transform>(entity, |tf| {
                 let pos = tf.pos.xz();
                 let n = pos.normalize();
