@@ -1,7 +1,7 @@
 use std::f32::consts::TAU;
 
 use cimvr_common::glam::swizzles::*;
-use cimvr_common::render::{RenderExtra, Primitive};
+use cimvr_common::render::{Primitive, RenderExtra};
 use cimvr_common::{
     glam::{Vec2, Vec3},
     render::{Mesh, MeshHandle, Render, UploadMesh, Vertex},
@@ -69,37 +69,35 @@ impl UserState for ServerState {
             .add_system(Self::ball_adder)
             .stage(Stage::Update)
             .subscribe::<FrameTime>()
-                .query("Balls")
-                .intersect::<Ball>(Access::Read)
-                .finish()
+            .query(Query::new("Balls").intersect::<Ball>(Access::Read))
             .build();
 
         for _ in 0..SUBSTEPS {
             sched
                 .add_system(Self::gravity)
                 .stage(Stage::Update)
-                    .query("Balls")
-                    .intersect::<Ball>(Access::Write)
-                    .finish()
+                .query(Query::new("Balls").intersect::<Ball>(Access::Write))
                 .build();
 
             sched
                 .add_system(Self::circle_constraint)
                 .stage(Stage::Update)
-                    .query("Balls")
-                    .intersect::<Ball>(Access::Read)
-                    .intersect::<Transform>(Access::Write)
-                    .finish()
+                .query(
+                    Query::new("Balls")
+                        .intersect::<Ball>(Access::Read)
+                        .intersect::<Transform>(Access::Write),
+                )
                 .build();
 
             sched
                 .add_system(Self::sim_step)
                 .stage(Stage::Update)
-                    .query("Balls")
-                    .intersect::<Transform>(Access::Read)
-                    .intersect::<LastTransform>(Access::Write)
-                    .intersect::<Ball>(Access::Write)
-                    .finish()
+                .query(
+                    Query::new("Balls")
+                        .intersect::<Transform>(Access::Read)
+                        .intersect::<LastTransform>(Access::Write)
+                        .intersect::<Ball>(Access::Write),
+                )
                 .subscribe::<FrameTime>()
                 .build();
         }
@@ -121,7 +119,7 @@ impl ServerState {
             return;
         }
 
-        //if 
+        //if
 
         let k = 100000;
         let mut rand = || (io.random() % k) as f32 / k as f32;
@@ -144,7 +142,6 @@ impl ServerState {
             .add_component(Ball { accel: Vec2::ZERO })
             .add_component(RenderExtra(extra))
             .build();
-
     }
 
     fn sim_step(&mut self, io: &mut EngineIo, query: &mut QueryResult) {
@@ -152,8 +149,8 @@ impl ServerState {
         let dt = dt / SUBSTEPS as f32;
 
         let entities: Vec<EntityId> = query.iter("Balls").collect();
-                                                
-        let mut positions: Vec<Vec2> = entities  
+
+        let mut positions: Vec<Vec2> = entities
             .iter()
             .map(|&entity| query.read::<Transform>(entity).pos.xz())
             .collect();
@@ -226,7 +223,10 @@ fn line_circle_mesh(n: usize, scale: f32) -> Mesh {
         .map(|pos| Vertex { pos, uvw: [1.; 3] })
         .collect();
 
-    let indices = (0..n as u32).map(|i| [i, (i+1) % n as u32]).flatten().collect();
+    let indices = (0..n as u32)
+        .map(|i| [i, (i + 1) % n as u32])
+        .flatten()
+        .collect();
 
     Mesh { vertices, indices }
 }
@@ -260,7 +260,6 @@ fn sim(positions: &mut [Vec2], last_positions: &mut [Vec2], accels: &[Vec2], dt:
                 let displacement = (thresh - dist) / 2.;
                 //displacement *= 0.95;
 
-
                 positions[i] += displacement * n;
                 positions[j] -= displacement * n;
                 //last_positions[i] = positions[i];
@@ -272,7 +271,12 @@ fn sim(positions: &mut [Vec2], last_positions: &mut [Vec2], accels: &[Vec2], dt:
     }
 
     // Integrate
-    for (((pos, last), accel), special) in positions.iter_mut().zip(last_positions).zip(accels).zip(special) {
+    for (((pos, last), accel), special) in positions
+        .iter_mut()
+        .zip(last_positions)
+        .zip(accels)
+        .zip(special)
+    {
         let vel = *pos - *last;
         if !special {
             *last = *pos;
@@ -280,4 +284,3 @@ fn sim(positions: &mut [Vec2], last_positions: &mut [Vec2], accels: &[Vec2], dt:
         *pos += vel + *accel * dt.powi(2);
     }
 }
-
