@@ -69,21 +69,22 @@ impl UserState for ServerState {
             .add_system(Self::ball_adder)
             .stage(Stage::Update)
             .subscribe::<FrameTime>()
-            .query(Query::new("Balls").intersect::<Ball>(Access::Read))
+            .query("Balls", Query::new().intersect::<Ball>(Access::Read))
             .build();
 
         for _ in 0..SUBSTEPS {
             sched
                 .add_system(Self::gravity)
                 .stage(Stage::Update)
-                .query(Query::new("Balls").intersect::<Ball>(Access::Write))
+                .query("Balls", Query::new().intersect::<Ball>(Access::Write))
                 .build();
 
             sched
                 .add_system(Self::circle_constraint)
                 .stage(Stage::Update)
                 .query(
-                    Query::new("Balls")
+                    "Balls",
+                    Query::new()
                         .intersect::<Ball>(Access::Read)
                         .intersect::<Transform>(Access::Write),
                 )
@@ -93,7 +94,8 @@ impl UserState for ServerState {
                 .add_system(Self::sim_step)
                 .stage(Stage::Update)
                 .query(
-                    Query::new("Balls")
+                    "Balls",
+                    Query::new()
                         .intersect::<Transform>(Access::Read)
                         .intersect::<LastTransform>(Access::Write)
                         .intersect::<Ball>(Access::Write),
