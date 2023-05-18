@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 mod sim;
 
-const BALL_RADIUS: f32 = 0.2;
+pub const BALL_RADIUS: f32 = 0.2;
 //const N_BALLS: usize = 10;
 const GRAVITY: Vec2 = Vec2::new(0., -9.8);
 const SUBSTEPS: usize = 6;
@@ -176,7 +176,7 @@ impl ServerState {
         dbg!(kinetic_energy);
         */
 
-        sim(&mut positions, &mut last_positions, &accels, dt);
+        sim::sim(&mut positions, &mut last_positions, &accels, dt);
 
         // Write positions back
         for ((&entity, position), last) in entities.iter().zip(&positions).zip(&last_positions) {
@@ -242,46 +242,4 @@ fn filled_circle_mesh(n: usize, scale: f32) -> Mesh {
     let indices = (1..n as u32 - 1).map(|i| [i, 0, i + 1]).flatten().collect();
 
     Mesh { vertices, indices }
-}
-
-fn sim(positions: &mut [Vec2], last_positions: &mut [Vec2], accels: &[Vec2], dt: f32) {
-    let mut special = vec![false; positions.len()];
-
-    // Collisions
-    for i in 0..positions.len() {
-        for j in (i + 1)..positions.len() {
-            let diff = positions[i] - positions[j];
-            let n = diff.normalize();
-            let dist = diff.length();
-
-            //if len < BALL_RADIUS * 2. { dbg!(len); }
-
-            let thresh = BALL_RADIUS * 2.;
-            if dist < thresh {
-                let displacement = (thresh - dist) / 2.;
-                //displacement *= 0.95;
-
-                positions[i] += displacement * n;
-                positions[j] -= displacement * n;
-                //last_positions[i] = positions[i];
-                //last_positions[j] = positions[j];
-                //special[i] = true;
-                //special[j] = true;
-            }
-        }
-    }
-
-    // Integrate
-    for (((pos, last), accel), special) in positions
-        .iter_mut()
-        .zip(last_positions)
-        .zip(accels)
-        .zip(special)
-    {
-        let vel = *pos - *last;
-        if !special {
-            *last = *pos;
-        }
-        *pos += vel + *accel * dt.powi(2);
-    }
 }
