@@ -10,13 +10,12 @@ use cimvr_common::{
 use cimvr_engine_interface::{dbg, make_app_state, pkg_namespace, prelude::*, println, FrameTime};
 use serde::{Deserialize, Serialize};
 
-mod query_accel;
 mod sim;
 
 const BALL_RADIUS: f32 = 0.2;
 //const N_BALLS: usize = 10;
 const GRAVITY: Vec2 = Vec2::new(0., -9.8);
-const SUBSTEPS: usize = 1;
+const SUBSTEPS: usize = 6;
 const CONTAINER_RADIUS: f32 = 3.;
 
 // All state associated with client-side behaviour
