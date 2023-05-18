@@ -2,12 +2,16 @@ use cimvr_common::glam::swizzles::*;
 use cimvr_common::{
     glam::{Vec2},
 };
+use goodie_bag::QueryAccelerator;
 
 use crate::BALL_RADIUS;
 pub fn sim(positions: &mut [Vec2], last_positions: &mut [Vec2], accels: &[Vec2], dt: f32) {
+    let pos_old_f32: Vec<[f32; 2]> = bytemuck::cast_slice(&positions).to_vec();
+    let query_accel = QueryAccelerator::<2>::new(&pos_old_f32, BALL_RADIUS * 2.);
+
     // Collisions
     for i in 0..positions.len() {
-        for j in (i + 1)..positions.len() {
+        for j in query_accel.query_neighbors(&pos_old_f32, i) {
             let diff = positions[i] - positions[j];
             let n = diff.normalize();
             let dist = diff.length();
